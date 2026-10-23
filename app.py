@@ -114,28 +114,39 @@ NA = ["-", " -", "- ", "", " ", "—", "–", "NA", "N/A", "na", "nan"]
 
 @st.cache_data
 def load_data():
-    """Loads and sanitizes the main dataset from directory relative to this script."""
+    """Loads and sanitizes dataset using case-insensitive search and explicit openpyxl engine."""
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    xlsx_path = os.path.join(BASE_DIR, "dataset.xlsx")
-    csv_path = os.path.join(BASE_DIR, "dataset.csv")
+    
+    # Linux on Streamlit Cloud is case-sensitive! Search for file regardless of casing.
+    target_file = None
+    if os.path.exists(BASE_DIR):
+        for f in os.listdir(BASE_DIR):
+            if f.lower() in ["dataset.xlsx", "dataset.xls", "dataset.csv"]:
+                target_file = os.path.join(BASE_DIR, f)
+                break
 
-    df = None
-    if os.path.exists(xlsx_path):
-        try:
-            df = pd.read_excel(xlsx_path, na_values=NA)
-        except Exception:
-            df = None
-    if df is None and os.path.exists(csv_path):
-        df = pd.read_csv(csv_path, na_values=NA, encoding="latin1")
-    if df is None:
+    if target_file is None:
+        files_found = os.listdir(BASE_DIR) if os.path.exists(BASE_DIR) else []
+        st.error(f"❌ Could not find `dataset.xlsx` or `dataset.csv`. Files found in folder: {files_found}")
         return None
 
+    try:
+        if target_file.lower().endswith(".csv"):
+            df = pd.read_csv(target_file, na_values=NA, encoding="latin1")
+        else:
+            df = pd.read_excel(target_file, engine="openpyxl", na_values=NA)
+    except Exception as e:
+        st.error(f"❌ Found file `{os.path.basename(target_file)}`, but pandas failed to read it. Error: {e}")
+        return None
+
+    # Strip trailing spaces / newlines from headers
     df.columns = (df.columns.astype(str)
                   .str.replace("\n", " ")
                   .str.strip()
                   .str.replace(r"\s+", " ", regex=True))
     df = df.loc[:, ~df.columns.str.startswith("Unnamed")].dropna(how="all")
 
+    # Clean up Excel datetime.time / mixed-type objects that crash PyArrow
     for col in df.columns:
         if df[col].dtype == "object":
             df[col] = df[col].apply(
