@@ -114,21 +114,38 @@ NA = ["-", " -", "- ", "", " ", "—", "–", "NA", "N/A", "na", "nan"]
 
 @st.cache_data
 def load_data():
-    """Loads and sanitizes the main dataset from local directory."""
+    """Loads and sanitizes the main dataset from directory relative to this script."""
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    xlsx_path = os.path.join(BASE_DIR, "dataset.xlsx")
+    csv_path = os.path.join(BASE_DIR, "dataset.csv")
+
     df = None
-    if os.path.exists("dataset.xlsx"):
-        try: 
-            df = pd.read_excel("dataset.xlsx", na_values=NA)
-        except Exception: 
+    if os.path.exists(xlsx_path):
+        try:
+            df = pd.read_excel(xlsx_path, na_values=NA)
+        except Exception:
             df = None
-    if df is None and os.path.exists("dataset.csv"):
-        df = pd.read_csv("dataset.csv", na_values=NA, encoding="latin1")
-    if df is None: 
+    if df is None and os.path.exists(csv_path):
+        df = pd.read_csv(csv_path, na_values=NA, encoding="latin1")
+    if df is None:
         return None
-    
-    df.columns = (df.columns.astype(str).str.replace("\n", " ").str.strip()
+
+    df.columns = (df.columns.astype(str)
+                  .str.replace("\n", " ")
+                  .str.strip()
                   .str.replace(r"\s+", " ", regex=True))
     df = df.loc[:, ~df.columns.str.startswith("Unnamed")].dropna(how="all")
+
+    for col in df.columns:
+        if df[col].dtype == "object":
+            df[col] = df[col].apply(
+                lambda x: x.strftime("%H:%M:%S") if hasattr(x, "strftime")
+                else ("" if x is None else str(x))
+            )
+            df[col] = df[col].replace(
+                {"nan": np.nan, "None": np.nan, "NaT": np.nan, "": np.nan, "NaN": np.nan}
+            )
+
     return df
 
 df = load_data()
